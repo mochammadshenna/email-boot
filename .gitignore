@@ -1,0 +1,8 @@
+.env
+.idea
+*.log
+*.env
+*.json
+*.rest
+vscode/
+*.vscode
