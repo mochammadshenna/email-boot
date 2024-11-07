@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -12,14 +13,6 @@ import (
 // var db *sql.DB
 
 func main() {
-	// var err error
-	// Connect to PostgreSQL
-	// connStr := "user=yourusername dbname=email_boot sslmode=disable"
-	// db, err = sql.Open("postgres", connStr)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
 	r := gin.Default()
 
 	r.POST("/send-email", sendEmail)
@@ -37,12 +30,22 @@ func sendEmail(c *gin.Context) {
 		Email   string `json:"email"`
 	}
 
+	// var err error
+	// // Connect to PostgreSQL
+	// connStr := "user=root dbname=db_email sslmode=disable"
+	// db, err = sql.Open("postgres", connStr)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// defer db.Close()
+
 	if err := c.ShouldBindJSON(&json); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	subject := "Penawaran Harga Cable Tray and Ladder, PT Arbrion Asia"
+	subject := "Penawaran Harga Cable Tray dan Ladder, PT Arbrion Asia"
 
 	// Create a template for the email body
 	emailBody := `
@@ -109,17 +112,19 @@ func sendEmail(c *gin.Context) {
 						Di tempat ,
 					</div>
 					<div class="promotion-text">
-						Kami adalah perusahaan yang bergerak di bidang yang menyediakan berbagai macam jenis cable tray dan cable ladder. Dengan berbagai pengalaman dan kepercayaan pelanggan sejak tahun 2007. PT Arbrion Asia akan membantu kebutuhan pembangunan infrastruktur untuk mendukung kebutuhan pengguna jasa.<br /><br />
+						Kami adalah perusahaan yang bergerak di bidang yang menyediakan berbagai macam jenis cable tray dan cable ladder. Dengan berbagai pengalaman dan kepercayaan pelanggan sejak tahun 2007. PT Arbrion Asia akan membantu kebutuhan jasa pembangunan infrastruktur anda.<br /><br />
 
 						Untuk lebih jelasnya, silahkan klik link berikut :<br /><br />
 						<a href="https://arbrion-asia.com/">Lihat Profil Perusahaan Kami</a><br /><br />
 
-						Dengan ini kami sampaikan bahwa kami ingin mengajukan penawaran harga untuk produk Cable Tray and Ladder<br /><br />
+						Dengan ini kami ingin mengajukan penawaran harga untuk produk Cable Tray dan Ladder. Berikut terlampir katalog dan harga produk kami. Semoga penawaran ini dapat memenuhi kebutuhan anda.<br /><br />
+
+						Apabila ada kelanjutan dari penawaran ini, jangan sungkan untuk menghubungi kami serta kami akan dengan senang hati melakukan penyesuaian harga dan spesifikasi produk. Kami juga siap melakukan kunjungan langsung ke lokasi anda untuk mendiskusikan lebih lanjut mengenai kebutuhan anda.<br /><br />
 
 						Hormat Kami,<br />
 						<b>Indria Wigati</b><br />
 						<b>PT Arbrion Asia</b><br /><br />
-						<p><a href="https://wa.me/6289657664445" style="color: #04a9f5; text-decoration: underline;">+62 896 5766 4445</a></p>
+						<a href="https://wa.me/6289657664445" style="color: #04a9f5; text-decoration: underline;">+62 896 5766 4445</a><br /><br />
 						<img alt="Arbrion Asia" width="500" height="150" src="https://arbrion-asia.com/" />
 					</div>
 				</div>
@@ -134,6 +139,24 @@ func sendEmail(c *gin.Context) {
 	m.SetHeader("To", json.To)
 	m.SetHeader("Subject", subject)
 	m.SetBody("text/html", emailBody)
+
+	// 	m.Attach("https://static.pbahotels.com/Assets/images/Hotel/exterior/5b4a2e61727ff03b3a5a
+	// 6fcd216c3716264bd067.pdf")
+
+	filePath1 := "Katalog PT.Arbrion Asia.pdf" // First attachment
+	filePath2 := "Price List.pdf"              // Second attachment
+
+	// Check if the first file exists
+	if _, err := os.Stat(filePath1); os.IsNotExist(err) {
+		log.Fatalf("Failed to attach file: %v", err)
+	}
+	m.Attach(filePath1) // Attach the first PDF file
+
+	// Check if the second file exists
+	if _, err := os.Stat(filePath2); os.IsNotExist(err) {
+		log.Fatalf("Failed to attach file: %v", err)
+	}
+	m.Attach(filePath2) // Attach the second PDF file
 
 	d := gomail.NewDialer("smtp.mail.yahoo.com", 587, "indriarbrion@yahoo.com", "ifulmzvmmcrmnriq")
 
