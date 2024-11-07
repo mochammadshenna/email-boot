@@ -1,27 +1,37 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	"gopkg.in/gomail.v2"
 )
 
-// var db *sql.DB
+var db *sql.DB
 
 func main() {
+	var err error
+	// Connect to PostgreSQL
+	connStr := "user=postgres dbname=db_emails sslmode=disable"
+	db, err = sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
 	r := gin.Default()
-
 	r.POST("/send-email", sendEmail)
-
-	r.Run(":9000") // Run on port 8080
+	r.Run(":9000") // Run on port 9000
 }
 
 func sendEmail(c *gin.Context) {
 	var json struct {
+		Batch   int64  `json:"batch"` // This will be used as a limit
 		To      string `json:"to"`
 		Subject string `json:"subject"`
 		Body    string `json:"body"`
@@ -29,16 +39,6 @@ func sendEmail(c *gin.Context) {
 		UserID  string `json:"user_id"`
 		Email   string `json:"email"`
 	}
-
-	// var err error
-	// // Connect to PostgreSQL
-	// connStr := "user=root dbname=db_email sslmode=disable"
-	// db, err = sql.Open("postgres", connStr)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// defer db.Close()
 
 	if err := c.ShouldBindJSON(&json); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -133,39 +133,83 @@ func sendEmail(c *gin.Context) {
 		</html>
 	`
 
-	// Send email using Yahoo SMTP
-	m := gomail.NewMessage()
-	m.SetHeader("From", "indriarbrion@yahoo.com")
-	m.SetHeader("To", json.To)
-	m.SetHeader("Subject", subject)
-	m.SetBody("text/html", emailBody)
-
-	// 	m.Attach("https://static.pbahotels.com/Assets/images/Hotel/exterior/5b4a2e61727ff03b3a5a
-	// 6fcd216c3716264bd067.pdf")
-
-	filePath1 := "Katalog PT.Arbrion Asia.pdf" // First attachment
-	filePath2 := "Price List.pdf"              // Second attachment
-
-	// Check if the first file exists
-	if _, err := os.Stat(filePath1); os.IsNotExist(err) {
-		log.Fatalf("Failed to attach file: %v", err)
+	// Query to get data based on batch limit where has_sent is false
+	rows, err := db.Query("SELECT email, id FROM emails WHERE has_sent = false LIMIT $1", json.Batch)
+	if err != nil {
+		log.Printf("Failed to query database: %v", err) // Log the actual error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query database"})
+		return
 	}
-	m.Attach(filePath1) // Attach the first PDF file
+	defer rows.Close() // Ensure rows are closed after use
 
-	// Check if the second file exists
-	if _, err := os.Stat(filePath2); os.IsNotExist(err) {
-		log.Fatalf("Failed to attach file: %v", err)
+	var wg sync.WaitGroup
+	count := 0
+	successfulEmails := []string{} // Slice to hold successfully sent emails
+
+	for rows.Next() {
+		var email string
+		var id int64 // Assuming you have an ID column to identify the email record
+		if err := rows.Scan(&email, &id); err != nil {
+			log.Printf("Failed to scan row: %v", err)
+			continue
+		}
+
+		wg.Add(1)
+		go func(email string, id int64) {
+			defer wg.Done()
+
+			m := gomail.NewMessage()
+			m.SetHeader("From", "indriarbrion@yahoo.com")
+			m.SetHeader("To", email)
+			m.SetHeader("Subject", subject)
+			m.SetBody("text/html", emailBody)
+
+			// filePath1 := "Katalog PT.Arbrion Asia.pdf" // First attachment
+			filePath2 := "Price List.pdf" // Second attachment
+
+			// // Check if the first file exists
+			// if _, err := os.Stat(filePath1); os.IsNotExist(err) {
+			// 	log.Printf("Failed to attach file: %v", err)
+			// 	return
+			// }
+			// m.Attach(filePath1) // Attach the first PDF file
+
+			// Check if the second file exists
+			if _, err := os.Stat(filePath2); os.IsNotExist(err) {
+				log.Printf("Failed to attach file: %v", err)
+				return
+			}
+			m.Attach(filePath2) // Attach the second PDF file
+
+			d := gomail.NewDialer("smtp.mail.yahoo.com", 587, "indriarbrion@yahoo.com", "ifulmzvmmcrmnriq")
+
+			// Send the email
+			if err := d.DialAndSend(m); err != nil {
+				log.Printf("Failed to send email to %s: %v", email, err)
+				return // Do not update the database if sending fails
+			}
+
+			// Update has_sent to true and set updated_at to the current timestamp in the database
+			_, err := db.Exec("UPDATE emails SET has_sent = true, updated_at = NOW() WHERE id = $1", id)
+			if err != nil {
+				log.Printf("Failed to update has_sent for email %s: %v", email, err)
+				return
+			}
+
+			// Add the successfully sent email to the slice
+			successfulEmails = append(successfulEmails, email)
+			count++
+		}(email, id)
 	}
-	m.Attach(filePath2) // Attach the second PDF file
 
-	d := gomail.NewDialer("smtp.mail.yahoo.com", 587, "indriarbrion@yahoo.com", "ifulmzvmmcrmnriq")
-
-	// Send the email
-	if err := d.DialAndSend(m); err != nil {
-		log.Printf("Failed to send email: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send email"})
+	if err := rows.Err(); err != nil {
+		log.Printf("Error occurred during rows iteration: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error occurred during rows iteration"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "Email sent successfully"})
+	wg.Wait() // Wait for all goroutines to finish
+
+	// Return the status and the list of successfully sent emails
+	c.JSON(http.StatusOK, gin.H{"status": "Emails sent successfully", "count": count, "sentEmails": successfulEmails})
 }
