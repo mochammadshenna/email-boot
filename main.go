@@ -103,7 +103,7 @@ func sendEmail(c *gin.Context) {
 		<body>
 			<div class="wrapper">
 				<div class="header-logo">
-					<img alt="Your Company Logo" width="307" height="50" src="https://static.pbahotels.com/Assets/images/Hotel/exterior/c3628711b086cca959673fbf01d201a2c661583f.png" />
+					<img alt="Your Company Logo" width="307" height="50" src="https://static.pbahotels.com/Assets/images/Hotel/exterior/a54135947cedd3fd5597ccfe82ab3c3ab0be1c4a.png" />
 				</div>
 				<div class="container">
 					<div class="guestname">
@@ -164,22 +164,22 @@ func sendEmail(c *gin.Context) {
 			m.SetHeader("Subject", subject)
 			m.SetBody("text/html", emailBody)
 
-			// filePath1 := "Katalog PT.Arbrion Asia.pdf" // First attachment
-			filePath2 := "Price List.pdf" // Second attachment
+			filePath1 := "Katalog PT.Arbrion Asia.pdf" // First attachment
+			// filePath2 := "Price List.pdf"              // Second attachment
 
-			// // Check if the first file exists
-			// if _, err := os.Stat(filePath1); os.IsNotExist(err) {
-			// 	log.Printf("Failed to attach file: %v", err)
-			// 	return
-			// }
-			// m.Attach(filePath1) // Attach the first PDF file
-
-			// Check if the second file exists
-			if _, err := os.Stat(filePath2); os.IsNotExist(err) {
+			// Check if the first file exists
+			if _, err := os.Stat(filePath1); os.IsNotExist(err) {
 				log.Printf("Failed to attach file: %v", err)
 				return
 			}
-			m.Attach(filePath2) // Attach the second PDF file
+			m.Attach(filePath1) // Attach the first PDF file
+
+			// Check if the second file exists
+			// if _, err := os.Stat(filePath2); os.IsNotExist(err) {
+			// 	log.Printf("Failed to attach file: %v", err)
+			// 	return
+			// }
+			// m.Attach(filePath2) // Attach the second PDF file
 
 			d := gomail.NewDialer("smtp.mail.yahoo.com", 587, "indriarbrion@yahoo.com", "ifulmzvmmcrmnriq")
 
@@ -213,3 +213,5 @@ func sendEmail(c *gin.Context) {
 	// Return the status and the list of successfully sent emails
 	c.JSON(http.StatusOK, gin.H{"status": "Emails sent successfully", "count": count, "sentEmails": successfulEmails})
 }
+
+// <img alt="Your Company Logo" width="307" height="50" src="https://static.pbahotels.com/Assets/images/Hotel/exterior/c3628711b086cca959673fbf01d201a2c661583f.png" />
