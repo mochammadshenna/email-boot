@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -16,7 +18,7 @@ var db *sql.DB
 
 func main() {
 	var err error
-	// Connect to PostgreSQL
+	// Connect to PostgreSQL with more robust settings
 	connStr := "user=postgres dbname=db_emails sslmode=disable"
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
@@ -24,9 +26,19 @@ func main() {
 	}
 	defer db.Close()
 
+	// Add connection verification
+	if err = db.Ping(); err != nil {
+		log.Fatal("Failed to ping database:", err)
+	}
+
+	// Set more conservative connection pool settings
+	db.SetMaxOpenConns(10)                 // Reduce max connections
+	db.SetMaxIdleConns(5)                  // Set idle connections
+	db.SetConnMaxLifetime(1 * time.Minute) // Shorter connection lifetime
+
 	r := gin.Default()
 	r.POST("/send-email", sendEmail)
-	r.Run(":9000") // Run on port 9000
+	r.Run(":9000")
 }
 
 func sendEmail(c *gin.Context) {
@@ -133,27 +145,43 @@ func sendEmail(c *gin.Context) {
 		</html>
 	`
 
-	// Query to get data based on batch limit where has_sent is false
 	rows, err := db.Query("SELECT email, id FROM emails WHERE has_sent = false LIMIT $1", json.Batch)
 	if err != nil {
-		log.Printf("Failed to query database: %v", err) // Log the actual error
+		log.Printf("Failed to query database: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query database"})
 		return
 	}
-	defer rows.Close() // Ensure rows are closed after use
+	defer rows.Close()
 
-	var wg sync.WaitGroup
-	count := 0
-	successfulEmails := []string{} // Slice to hold successfully sent emails
-
+	// Store all emails and IDs first
+	type EmailData struct {
+		Email string
+		ID    int64
+	}
+	var emailsToProcess []EmailData
 	for rows.Next() {
 		var email string
-		var id int64 // Assuming you have an ID column to identify the email record
+		var id int64
 		if err := rows.Scan(&email, &id); err != nil {
 			log.Printf("Failed to scan row: %v", err)
 			continue
 		}
+		emailsToProcess = append(emailsToProcess, EmailData{Email: email, ID: id})
+	}
 
+	if err := rows.Err(); err != nil {
+		log.Printf("Error occurred during rows iteration: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error occurred during rows iteration"})
+		return
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex // Mutex for protecting shared resources
+	count := 0
+	successfulEmails := []string{}
+
+	// Process emails
+	for _, emailData := range emailsToProcess {
 		wg.Add(1)
 		go func(email string, id int64) {
 			defer wg.Done()
@@ -164,53 +192,40 @@ func sendEmail(c *gin.Context) {
 			m.SetHeader("Subject", subject)
 			m.SetBody("text/html", emailBody)
 
-			filePath1 := "Katalog PT.Arbrion Asia.pdf" // First attachment
-			// filePath2 := "Price List.pdf"              // Second attachment
-
-			// Check if the first file exists
+			filePath1 := "Katalog PT.Arbrion Asia.pdf"
 			if _, err := os.Stat(filePath1); os.IsNotExist(err) {
 				log.Printf("Failed to attach file: %v", err)
 				return
 			}
-			m.Attach(filePath1) // Attach the first PDF file
-
-			// Check if the second file exists
-			// if _, err := os.Stat(filePath2); os.IsNotExist(err) {
-			// 	log.Printf("Failed to attach file: %v", err)
-			// 	return
-			// }
-			// m.Attach(filePath2) // Attach the second PDF file
+			m.Attach(filePath1)
 
 			d := gomail.NewDialer("smtp.mail.yahoo.com", 587, "indriarbrion@yahoo.com", "ifulmzvmmcrmnriq")
 
-			// Send the email
 			if err := d.DialAndSend(m); err != nil {
 				log.Printf("Failed to send email to %s: %v", email, err)
-				return // Do not update the database if sending fails
+				return
 			}
 
-			// Update has_sent to true and set updated_at to the current timestamp in the database
-			_, err := db.Exec("UPDATE emails SET has_sent = true, updated_at = NOW() WHERE id = $1", id)
+			// Use a separate context for database operations
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			// Update database with context
+			_, err := db.ExecContext(ctx, "UPDATE emails SET has_sent = true, updated_at = NOW() WHERE id = $1", id)
 			if err != nil {
 				log.Printf("Failed to update has_sent for email %s: %v", email, err)
 				return
 			}
 
-			// Add the successfully sent email to the slice
+			mu.Lock()
 			successfulEmails = append(successfulEmails, email)
 			count++
-		}(email, id)
+			mu.Unlock()
+		}(emailData.Email, emailData.ID)
 	}
 
-	if err := rows.Err(); err != nil {
-		log.Printf("Error occurred during rows iteration: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error occurred during rows iteration"})
-		return
-	}
+	wg.Wait()
 
-	wg.Wait() // Wait for all goroutines to finish
-
-	// Return the status and the list of successfully sent emails
 	c.JSON(http.StatusOK, gin.H{"status": "Emails sent successfully", "count": count, "sentEmails": successfulEmails})
 }
 
