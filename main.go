@@ -117,7 +117,7 @@ func sendEmail(c *gin.Context) {
 						Untuk lebih jelasnya, silahkan klik link berikut :<br /><br />
 						<a href="https://arbrion-asia.com/">Lihat Profil Perusahaan Kami</a><br /><br />
 
-						Dengan ini kami ingin mengajukan penawaran harga untuk produk Cable Tray dan Ladder. Berikut terlampir katalog dan harga produk kami. Semoga penawaran ini dapat memenuhi kebutuhan anda.<br /><br />
+						Dengan ini kami ingin mengajukan penawaran harga untuk produk Cable Tray dan Ladder. Berikut terlampir katalog produk kami, Semoga penawaran ini dapat memenuhi kebutuhan anda.<br /><br />
 
 						Apabila ada kelanjutan dari penawaran ini, jangan sungkan untuk menghubungi kami serta kami akan dengan senang hati melakukan penyesuaian harga dan spesifikasi produk. Kami juga siap melakukan kunjungan langsung ke lokasi anda untuk mendiskusikan lebih lanjut mengenai kebutuhan anda.<br /><br />
 
