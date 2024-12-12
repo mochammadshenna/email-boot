@@ -19,7 +19,7 @@ var db *sql.DB
 func main() {
 	var err error
 	// Connect to PostgreSQL with more robust settings
-	connStr := "user=postgres dbname=db_emails sslmode=disable"
+	connStr := "user=postgres password= dbname=db_emails sslmode=disable"
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
